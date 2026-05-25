@@ -22,3 +22,15 @@ DEDUP_FUZZY_THRESHOLD = 75
 SPLIT_RATIO_MIN = 0.20
 SPLIT_RATIO_MAX = 0.80
 SPLIT_LOOKBACK_DAYS = 7
+
+GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
+GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
+GMAIL_TOKEN_PATH = BASE_DIR / "token.json"
+GMAIL_CREDENTIALS_PATH = BASE_DIR / "credentials.json"
+GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+
+BANK_SENDERS = [
+    "alertasynotificaciones@bancolombia.com.co",
+    "notificaciones@nequi.com.co",
+    "notificaciones@nequi.com",
+]
