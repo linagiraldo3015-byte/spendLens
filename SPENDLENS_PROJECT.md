@@ -1,333 +1,268 @@
-# SpendLens — Proyecto de portafolio
-**Analista de datos · Python · Claude API · Streamlit**
+# SpendLens — Referencia del proyecto
 
----
+App web personal de seguimiento de gastos que ingiere datos desde tres fuentes (fotos de facturas, correos bancarios, entrada manual), extrae y categoriza con IA, detecta duplicados/splits, y presenta un dashboard analítico.
 
-## Visión general
-
-SpendLens es una aplicación web personal de seguimiento de gastos que ingiere datos desde tres fuentes (fotos de facturas, correos bancarios y entrada manual), los procesa con IA para extraer y categorizar la información, detecta duplicados y gastos compartidos, y los presenta en un dashboard analítico interactivo.
-
-**Objetivo de portafolio:** demostrar capacidad de diseño de soluciones de datos de extremo a extremo — desde la ingesta de datos no estructurados hasta la visualización analítica — combinando Python, SQL, y modelos de IA.
-
----
-
-## Stack tecnológico
-
-| Capa | Tecnología | Justificación |
-|---|---|---|
-| Frontend / UI | Streamlit | Rápido, pythónico, ideal para dashboards de datos |
-| Backend / lógica | Python 3.11+ | Stack principal del analista |
-| Base de datos | SQLite (dev) / PostgreSQL (prod) | SQLite para desarrollo local, Postgres en deploy |
-| IA / extracción | Claude API (claude-sonnet-4-5) | Extracción de recibos, clasificación, detección de splits |
-| Email | Gmail API (OAuth 2.0) | Lectura de correos bancarios |
-| Fuzzy matching | rapidfuzz | Comparación aproximada de nombres de comercios |
-| Visualización | Plotly | Gráficos interactivos dentro de Streamlit |
-| Deploy | Streamlit Cloud | Gratuito, fácil, URL pública compartible |
-| Control de versiones | Git + GitHub | Repositorio público para portafolio |
+**Stack:** Python 3.11+ · Streamlit · Claude API (claude-sonnet-4-5) · Gmail API (OAuth 2.0) · SQLite · Plotly · BeautifulSoup4  
+**Repo:** https://github.com/linagiraldo3015-byte/spendLens  
+**Objetivo:** proyecto de portafolio — demostrar diseño de solución de datos end-to-end.
 
 ---
 
 ## Estructura de carpetas
 
 ```
-spendlens/
-│
-├── README.md                  # Descripción del proyecto, instalación, uso
-├── ARCHITECTURE.md            # Decisiones de diseño y diagrama de arquitectura
-├── CHANGELOG.md               # Historial de cambios por versión
-├── requirements.txt           # Dependencias Python
-├── .env.example               # Variables de entorno necesarias (sin valores reales)
-├── .gitignore
-│
-├── app.py                     # Punto de entrada — Streamlit app
+spendLens/
+├── app.py                          # Punto de entrada Streamlit (sidebar + routing)
+├── requirements.txt                # Dependencias pinneadas
+├── .env.example                    # Template de variables de entorno
+├── .gitignore                      # Excluye venv/, .env, *.db, token.json, credentials.json
+├── spendlens.db                    # SQLite local (gitignored)
+├── credentials.json                # OAuth client secret de Google Cloud (gitignored)
+├── token.json                      # Token OAuth generado al autenticar (gitignored)
 │
 ├── config/
-│   └── settings.py            # Configuración centralizada (rutas, umbrales, constantes)
+│   └── settings.py                 # Constantes, rutas, umbrales de dedup/split, config Gmail
 │
 ├── database/
-│   ├── schema.sql             # Definición de tablas
-│   ├── db.py                  # Conexión y queries base
-│   └── migrations/            # Scripts de migración numerados
-│       └── 001_initial.sql
+│   ├── schema.sql                  # DDL completo: transactions, categorias, transaction_sources,
+│   │                               #   transaction_links, review_queue, presupuestos
+│   ├── db.py                       # Conexión SQLite, init_db(), CRUD de transacciones y categorías
+│   └── migrations/
+│       └── 001_initial.sql         # Ejecuta schema.sql
 │
-├── ingestion/                 # Capa de ingesta de datos
+├── models/
 │   ├── __init__.py
-│   ├── photo_parser.py        # Extracción desde foto de factura (Claude Vision)
-│   ├── email_parser.py        # Extracción desde correos bancarios (Gmail API)
-│   └── manual_entry.py        # Validación de entrada manual
+│   ├── transaction.py              # Dataclass Transaction + enums TransactionType, Source, Direction
+│   └── review_item.py              # Dataclass ReviewItem + enums ReviewType, ReviewStatus
 │
-├── processing/                # Capa de procesamiento y lógica de negocio
+├── ingestion/
 │   ├── __init__.py
-│   ├── normalizer.py          # Normalización de montos, fechas, nombres
-│   ├── categorizer.py         # Clasificación de gastos por categoría
-│   ├── deduplicator.py        # Detección y fusión de duplicados
-│   └── split_detector.py      # Detección de gastos compartidos / reembolsos
+│   ├── photo_parser.py             # Extracción de recibos con Claude Vision → Transaction
+│   └── email_parser.py             # Regex parser para correos de Bancolombia y Nequi
 │
-├── models/                    # Modelos de datos (dataclasses / Pydantic)
+├── processing/
+│   └── __init__.py                 # Vacío — módulos pendientes (normalizer, deduplicator, etc.)
+│
+├── services/
 │   ├── __init__.py
-│   ├── transaction.py         # Transaction, TransactionType, Source
-│   └── review_item.py         # ReviewItem para cola de revisión humana
+│   ├── claude_service.py           # Wrapper Claude API: ask_text, ask_with_image, ask_json, ask_json_with_image
+│   └── gmail_service.py            # OAuth 2.0 auth, list_bank_emails, fetch_email, mark_as_read
 │
-├── views/                     # Páginas y componentes de Streamlit
-│   ├── __init__.py
-│   ├── dashboard.py           # Vista principal con métricas y gráficos
-│   ├── upload.py              # Vista de subida de foto / entrada manual
-│   ├── review_queue.py        # Cola de revisión de duplicados y splits
-│   └── transactions.py        # Lista completa de transacciones
-│
-├── services/                  # Integraciones externas
-│   ├── __init__.py
-│   ├── claude_service.py      # Wrapper de Claude API
-│   └── gmail_service.py       # Wrapper de Gmail API
-│
-└── tests/                     # Pruebas unitarias
-    ├── test_normalizer.py
-    ├── test_deduplicator.py
-    └── test_split_detector.py
+└── views/
+    ├── __init__.py
+    ├── upload.py                   # Tabs: entrada manual + foto de factura con preview/edición
+    └── transactions.py             # Lista con métricas (total, count, promedio) + dataframe
+```
+
+### Archivos planificados pero NO creados aún
+
+```
+ingestion/manual_entry.py           # Validación de entrada manual (lógica inline en views/upload.py)
+processing/normalizer.py            # Normalización de montos, fechas, nombres
+processing/categorizer.py           # Clasificación automática por categoría
+processing/deduplicator.py          # Detección y fusión de duplicados (rapidfuzz)
+processing/split_detector.py        # Detección de gastos compartidos / reembolsos
+views/dashboard.py                  # Dashboard con gráficos Plotly
+views/review_queue.py               # Cola de revisión humana para duplicados/splits
+tests/                              # No existe — sin tests unitarios
 ```
 
 ---
 
-## Esquema de base de datos
+## Estado por fases
 
-```sql
--- Transacciones principales
-CREATE TABLE transactions (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    tipo            TEXT NOT NULL CHECK(tipo IN ('compra', 'transferencia')),
-    monto           REAL NOT NULL,
-    monto_neto      REAL,           -- monto después de reembolsos (NULL = sin split)
-    fecha           DATE NOT NULL,
-    descripcion     TEXT,
-    comercio        TEXT,           -- para compras
-    contraparte     TEXT,           -- para transferencias (nombre de persona)
-    direccion       TEXT CHECK(direccion IN ('entrada', 'salida')),
-    concepto        TEXT,           -- texto libre del banco o del usuario
-    categoria_id    INTEGER REFERENCES categorias(id),
-    estado          TEXT NOT NULL DEFAULT 'activo'
-                    CHECK(estado IN ('activo', 'fusionado', 'compensado')),
-    creado_en       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+### Fase 1 — Base ✅
 
--- Fuentes de cada transacción (una transacción puede tener múltiples fuentes)
-CREATE TABLE transaction_sources (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    transaction_id  INTEGER NOT NULL REFERENCES transactions(id),
-    fuente          TEXT NOT NULL CHECK(fuente IN ('foto', 'email', 'manual')),
-    raw_data        TEXT,           -- JSON con los datos originales extraídos
-    confianza       REAL,           -- score de confianza de la extracción (0-1)
-    creado_en       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+- [x] Repositorio inicializado con estructura de carpetas
+- [x] Esquema de base de datos (`schema.sql`) con 6 tablas
+- [x] Modelos de datos: `Transaction`, `ReviewItem` con enums
+- [x] `db.py`: `init_db()`, `insert_transaction()`, `get_all_transactions()`, `get_categorias()`, `insert_categoria()`
+- [x] Vista `upload.py`: formulario manual con tipo, monto, fecha, dirección, categoría, comercio/contraparte
+- [x] Vista `transactions.py`: lista con métricas resumen y dataframe
+- [x] `app.py`: navegación sidebar con dos páginas
+- [x] Creación de categorías inline en el formulario
 
--- Vínculos entre transacciones (duplicados fusionados, splits)
-CREATE TABLE transaction_links (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    transaction_id  INTEGER NOT NULL REFERENCES transactions(id),
-    linked_id       INTEGER NOT NULL REFERENCES transactions(id),
-    tipo_link       TEXT NOT NULL CHECK(tipo_link IN ('duplicado', 'split', 'reembolso')),
-    aprobado_por    TEXT DEFAULT 'usuario',
-    creado_en       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+### Fase 2 — Ingesta con IA 🔄
 
--- Cola de revisión humana
-CREATE TABLE review_queue (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    tipo            TEXT NOT NULL CHECK(tipo IN ('duplicado', 'split')),
-    transaction_a   INTEGER NOT NULL REFERENCES transactions(id),
-    transaction_b   INTEGER NOT NULL REFERENCES transactions(id),
-    confianza       REAL NOT NULL,
-    motivo          TEXT,           -- explicación generada por IA
-    estado          TEXT NOT NULL DEFAULT 'pendiente'
-                    CHECK(estado IN ('pendiente', 'aprobado', 'rechazado')),
-    creado_en       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    resuelto_en     TIMESTAMP
-);
+- [x] `claude_service.py`: wrapper completo (text, image, json, json+image)
+- [x] `photo_parser.py`: extracción de recibos con Claude Vision + preview editable en UI
+- [x] `gmail_service.py`: autenticación OAuth 2.0, query por label `SpendLens`, fetch y decode de emails
+- [x] `email_parser.py`: regex patterns para Bancolombia (5 formatos) y Nequi (3 formatos)
+- [x] `_clean_body()`: limpieza de URLs, imágenes, caracteres especiales, palabras pegadas
+- [x] `_parse_monto()`: manejo de formatos colombianos ($36,000.00 / $53,700 / $85.000)
+- [x] ~~🐛 email_parser.py no hace match con correos reales de Bancolombia~~ → ✅ **Resuelto** (ver sección Bug resuelto)
+- [x] `_extract_body()`: fallback a HTML con BeautifulSoup cuando no hay text/plain
+- [x] `build_bank_query()`: removido filtro `is:unread` para no perder correos ya abiertos
+- [x] Validado contra 12 correos reales: 11 parsean correctamente, 1 retorna `None` correctamente (aviso de rechazo, no transacción)
+- [ ] Integración del email parser en la UI (vista para importar correos)
+- [ ] `normalizer.py`: normalización centralizada
+- [ ] `categorizer.py`: clasificación automática con Claude
 
--- Categorías
-CREATE TABLE categorias (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre          TEXT NOT NULL UNIQUE,
-    color_hex       TEXT,
-    icono           TEXT
-);
+### Fase 3 — Calidad de datos ⏳
 
--- Presupuestos mensuales por categoría
-CREATE TABLE presupuestos (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    categoria_id    INTEGER NOT NULL REFERENCES categorias(id),
-    anio            INTEGER NOT NULL,
-    mes             INTEGER NOT NULL CHECK(mes BETWEEN 1 AND 12),
-    limite          REAL NOT NULL,
-    UNIQUE(categoria_id, anio, mes)
-);
-```
-
----
-
-## Modelos de datos (Python)
-
-```python
-# models/transaction.py
-from dataclasses import dataclass, field
-from datetime import date
-from enum import Enum
-from typing import Optional
-
-class TransactionType(str, Enum):
-    COMPRA = "compra"
-    TRANSFERENCIA = "transferencia"
-
-class Source(str, Enum):
-    FOTO = "foto"
-    EMAIL = "email"
-    MANUAL = "manual"
-
-class Direction(str, Enum):
-    ENTRADA = "entrada"
-    SALIDA = "salida"
-
-@dataclass
-class Transaction:
-    tipo: TransactionType
-    monto: float
-    fecha: date
-    descripcion: Optional[str] = None
-    comercio: Optional[str] = None
-    contraparte: Optional[str] = None
-    direccion: Optional[Direction] = None
-    concepto: Optional[str] = None
-    categoria: Optional[str] = None
-    monto_neto: Optional[float] = None
-    fuentes: list[Source] = field(default_factory=list)
-    confianza: float = 1.0
-```
-
----
-
-## Fases de desarrollo
-
-### Fase 1 — Base (días 1–3)
-- [ ] Inicializar repositorio con estructura de carpetas
-- [ ] Crear esquema de base de datos y script de inicialización
-- [ ] Implementar modelos de datos (dataclasses)
-- [ ] Formulario de entrada manual funcional
-- [ ] Vista básica de lista de transacciones
-
-**Entregable:** puedo agregar un gasto a mano y verlo en una lista.
-
----
-
-### Fase 2 — Ingesta con IA (días 4–6)
-- [ ] Integrar Claude API (claude_service.py)
-- [ ] Parser de foto de recibo (photo_parser.py)
-- [ ] Parser de correos bancarios — Bancolombia y Nequi (email_parser.py)
-- [ ] Normalización de montos y fechas (normalizer.py)
-- [ ] Categorización automática (categorizer.py)
-
-**Entregable:** subo una foto y el sistema extrae y categoriza el gasto solo.
-
----
-
-### Fase 3 — Calidad de datos (días 7–9)
-- [ ] Motor de deduplicación con fuzzy matching (deduplicator.py)
-- [ ] Cola de revisión humana para duplicados (review_queue.py)
-- [ ] Detección de gastos compartidos / reembolsos (split_detector.py)
+- [ ] `deduplicator.py`: motor de deduplicación con rapidfuzz
+- [ ] Cola de revisión humana (`review_queue.py` vista)
+- [ ] `split_detector.py`: detección de gastos compartidos
 - [ ] Vista de revisión con propuesta de vinculación
 
-**Entregable:** el sistema detecta duplicados y splits, y me pide confirmación.
+### Fase 4 — Dashboard ⏳
 
----
-
-### Fase 4 — Dashboard (días 10–12)
 - [ ] Métricas clave del mes (total, neto, por categoría)
 - [ ] Gráfico de tendencia mensual (Plotly)
-- [ ] Desglose por categoría con barras
+- [ ] Desglose por categoría
 - [ ] Alertas de presupuesto
 - [ ] Filtros por fecha y categoría
 
-**Entregable:** dashboard completo con todos los gastos del mes.
+### Fase 5 — Deploy y documentación ⏳
 
----
-
-### Fase 5 — Deploy y documentación (días 13–14)
-- [ ] README completo con screenshots y demo GIF
-- [ ] ARCHITECTURE.md con decisiones de diseño
+- [ ] README con screenshots y demo GIF
+- [ ] ARCHITECTURE.md
 - [ ] Deploy en Streamlit Cloud
-- [ ] Variables de entorno documentadas en .env.example
-
-**Entregable:** URL pública compartible y repositorio de portafolio pulido.
+- [ ] Documentación de .env.example completa
 
 ---
 
-## Reglas de decisión del motor de deduplicación
+## ✅ Bug resuelto — email_parser.py no parseaba correos de Bancolombia
 
-| Confianza | Acción automática |
+**Síntoma original:** `parse_email()` retornaba `None` para correos reales de Bancolombia que llegaban via Gmail API.
+
+**Causa raíz (triple):**
+
+1. **`_MULTI_SPACE` usaba `r"[ \t]+"`** — no colapsaba los saltos de línea `\r\n` que Gmail insertaba en medio de las frases, rompiendo los regex. **Fix:** cambiado a `r"\s+"`.
+2. **Faltaba formato de Botón Bancolombia** — pagos a comercios tipo "Transferiste $61,500.00 por Boton Bancolombia a PASMOL SAS desde producto *3545". **Fix:** se agregó regex `_BANCOLOMBIA_BOTON`, clasificado como COMPRA (el destinatario es un comercio, no una persona).
+3. **Correos solo con HTML** — algunos correos de Bancolombia llegan solo con `text/html`, sin `text/plain`, así que `_extract_body()` devolvía cuerpo vacío. **Fix:** se agregó fallback a HTML usando BeautifulSoup (`_find_part_by_mime` y `_html_to_text`).
+
+**Otros cambios relacionados:**
+- Se quitó `is:unread` del query de Gmail en `build_bank_query()` para no perder transacciones de correos ya abiertos.
+- Nueva dependencia: `beautifulsoup4==4.14.3` (en `requirements.txt`).
+
+**Validación:** parser probado contra 12 correos reales de Bancolombia — 11 parsean correctamente, 1 retorna `None` correctamente (es un aviso de rechazo de factura, no una transacción).
+
+---
+
+## Formatos reales de correos Bancolombia
+
+Los correos de notificación de Bancolombia (`alertasynotificaciones@bancolombia.com.co`) usan estos formatos en el body:
+
+### Transferencia enviada
+```
+Transferiste $36,000.00 desde tu cuenta 3545 a la cuenta *3128402948 el 24/05/2026 a las 19:41
+```
+
+### Transferencia recibida
+```
+Recibiste una transferencia por $53,700 de WALTER GUETTE en tu cuenta **3545, el 23/05/2026 a las 11:18
+```
+
+### Pago a comercio
+```
+Pagaste $165,000.00 a Kushki Colombia SA desde tu producto *3545 el 21/05/2026 12:40:45
+```
+
+### Compra
+```
+Compraste $50,000.00 en EXITO POBLADO el 24/05/2026 a las 14:30
+```
+
+### Pago por Botón Bancolombia
+```
+Transferiste $61,500.00 por Boton Bancolombia a PASMOL SAS desde producto *3545. 24/05/2026 07:43:11
+```
+> Clasificado como COMPRA (el destinatario es un comercio, no una persona).
+
+**Notas sobre los formatos:**
+- Los montos usan coma como separador de miles y punto para decimales (`$36,000.00`), o solo coma de miles sin decimales (`$53,700`)
+- Las cuentas aparecen con `*`, `**`, o sin asterisco
+- La hora puede venir como `a las HH:MM` o directamente `HH:MM:SS`
+- Puede haber coma antes de `el` en "Recibiste" (`**3545, el`)
+- Palabras como `cuenta` y `producto` se usan intercambiablemente
+
+---
+
+## Decisiones de diseño
+
+### Categorías
+Predefinidas en la tabla `categorias`, creadas por el usuario desde la UI. Sugerencias del photo_parser via Claude:
+`Alimentacion`, `Transporte`, `Entretenimiento`, `Salud`, `Hogar`, `Educacion`, `Ropa`, `Tecnologia`, `Servicios`, `Otros`
+
+### Etiqueta Gmail
+Se usa la etiqueta `SpendLens` en Gmail para filtrar correos bancarios. El query es:
+```
+newer_than:{max_days}d label:SpendLens
+```
+> ⚠️ Se removió `is:unread` del query para no perder transacciones de correos ya abiertos. La deduplicación se manejará por `message_id` al conectar con la BD.
+
+El usuario debe crear la etiqueta manualmente en Gmail y aplicar un filtro para que los correos de `alertasynotificaciones@bancolombia.com.co` y `notificaciones@nequi.com.co` reciban esa etiqueta.
+
+### transaction_sources
+Una transacción puede tener múltiples fuentes (`foto`, `email`, `manual`). La tabla `transaction_sources` registra cada fuente con su `raw_data` (JSON original) y `confianza` (0–1). Actualmente solo se inserta la fuente `manual` con confianza `1.0` desde `db.py`.
+
+### Formato de montos colombianos
+`_parse_monto()` en `email_parser.py` maneja tres formatos:
+- `$36,000.00` → coma=miles, punto=decimal → `36000.00`
+- `$53,700` → coma=miles, sin decimal → `53700`
+- `$85.000` → punto=miles, sin decimal → `85000`
+
+### Umbrales de deduplicación (configurados, no implementados)
+```python
+DEDUP_CONFIDENCE_AUTO = 0.90     # ≥90% → fusión automática
+DEDUP_CONFIDENCE_REVIEW = 0.60   # 60-89% → cola de revisión
+DEDUP_DATE_TOLERANCE_DAYS = 1    # ±1 día
+DEDUP_FUZZY_THRESHOLD = 75       # rapidfuzz score mínimo
+```
+
+### Detección de splits (configurada, no implementada)
+```python
+SPLIT_RATIO_MIN = 0.20           # ratio reembolso/gasto ≥20%
+SPLIT_RATIO_MAX = 0.80           # ratio reembolso/gasto ≤80%
+SPLIT_LOOKBACK_DAYS = 7          # buscar gasto original en últimos 7 días
+```
+
+### Idioma del código
+- Variables de dominio en español: `monto`, `fecha`, `comercio`, `contraparte`, `concepto`
+- Estructuras técnicas en inglés: `parser`, `service`, `handler`
+- UI en español
+
+---
+
+## Configuración Gmail
+
+| Item | Valor |
 |---|---|
-| ≥ 90% | Fusión automática sin revisión |
-| 60% – 89% | Entra a cola de revisión humana |
-| < 60% | Se guardan como registros independientes |
-
-Criterios de matching (los tres deben cumplirse):
-- **Monto:** exactamente igual
-- **Fecha:** diferencia ≤ 1 día
-- **Comercio/contraparte:** similitud fuzzy ≥ 75% (rapidfuzz)
+| Cuenta | linagiraldo3015@gmail.com |
+| Etiqueta | `SpendLens` |
+| Remitentes bancarios | `alertasynotificaciones@bancolombia.com.co`, `notificaciones@nequi.com.co`, `notificaciones@nequi.com` |
+| Scopes | `gmail.readonly` |
+| Archivos locales | `credentials.json` (OAuth client secret), `token.json` (token generado) |
+| Ambos en .gitignore | ✅ |
 
 ---
 
-## Reglas de detección de splits
-
-- La transferencia entrante tiene keywords de reembolso en el concepto
-- El ratio reembolso/gasto original está entre 20% y 80%
-- El gasto original ocurrió en los últimos 7 días
-- Categoría compatible (Alimentación, Entretenimiento, etc.)
-
----
-
-## Estándares de código
-
-- **Docstrings** en todas las funciones públicas (formato Google style)
-- **Type hints** en todos los parámetros y retornos
-- **Nombres en español** para variables de dominio (monto, fecha, comercio)
-- **Nombres en inglés** para estructuras técnicas (parser, handler, service)
-- Un archivo por responsabilidad — sin módulos "utils" genéricos
-- Toda llamada a Claude API pasa por `claude_service.py` — nunca directo
-
----
-
-## Variables de entorno requeridas
+## Variables de entorno
 
 ```bash
-# .env.example
-ANTHROPIC_API_KEY=sk-ant-...
-GMAIL_CLIENT_ID=...
-GMAIL_CLIENT_SECRET=...
-DATABASE_URL=sqlite:///spendlens.db
-APP_ENV=development   # development | production
+ANTHROPIC_API_KEY=sk-ant-...          # API key de Anthropic
+GMAIL_CLIENT_ID=...                    # OAuth client ID de Google Cloud
+GMAIL_CLIENT_SECRET=...                # OAuth client secret
+DATABASE_URL=sqlite:///spendlens.db    # URL de la base de datos
+APP_ENV=development                    # development | production
 ```
 
 ---
 
-## Instrucciones para Claude Code
+## Próximos pasos (por prioridad)
 
-Al iniciar sesión con Claude Code, ejecutar:
-
-```bash
-claude "Lee el archivo SPENDLENS_PROJECT.md y úsalo como referencia \
-completa del proyecto. Comenzamos por la Fase 1. \
-Crea la estructura de carpetas, el esquema de base de datos, \
-y el módulo models/transaction.py siguiendo exactamente \
-las especificaciones del documento."
-```
-
-Comando para continuar en sesiones posteriores:
-
-```bash
-claude "Continuamos con SpendLens. Lee SPENDLENS_PROJECT.md \
-para contexto. Estamos en Fase [X]. \
-El último entregable completado fue: [descripción]."
-```
+1. **Vista de importación de emails** — botón en la UI para trigger `list_bank_emails()` → `parse_email()` → `insert_transaction()` con fuente `email`
+2. **Deduplicación por `message_id`** — al quitar `is:unread`, re-importar trae correos repetidos. Guardar en BD los `message_id` ya importados y saltarlos. Se implementa al conectar el parser con la BD.
+3. **categorizer.py** — clasificación automática usando Claude para transacciones sin categoría
+4. **normalizer.py** — normalización centralizada de comercios (EXITO POBLADO → Éxito)
+5. **deduplicator.py** — motor de deduplicación con rapidfuzz usando los umbrales de `settings.py`
+6. **review_queue.py** (vista) — cola de revisión humana para duplicados y splits
+7. **split_detector.py** — detección de gastos compartidos
+8. **dashboard.py** — métricas y gráficos Plotly
+9. **Tests unitarios** — empezar por `email_parser.py` y `deduplicator.py`
+10. **Deploy** — Streamlit Cloud + README con screenshots
 
 ---
 
-*Documento generado como base del proyecto SpendLens.*
-*Versión 1.0 — Mayo 2026*
+*Última actualización: 2026-05-26*

@@ -1,4 +1,5 @@
 import base64
+from bs4 import BeautifulSoup
 import email as email_lib
 from dataclasses import dataclass
 from email.header import decode_header
@@ -63,16 +64,17 @@ def get_gmail_service() -> Resource:
 
 def build_bank_query(max_days: int = 7) -> str:
     """Construye el query de Gmail para filtrar correos bancarios recientes."""
-    sender_filter = " OR ".join(f"from:{s}" for s in BANK_SENDERS)
-    return f"is:unread newer_than:{max_days}d ({sender_filter})"
+    return f"newer_than:{max_days}d label:SpendLens"
 
 
 def list_bank_emails(
+    service: Optional[Resource] = None,
     max_results: int = 20,
     max_days: int = 7,
 ) -> list[EmailMessage]:
     """Lista correos no leidos de remitentes bancarios."""
-    service = get_gmail_service()
+    if service is None:
+        service = get_gmail_service()
     query = build_bank_query(max_days)
 
     response = (
@@ -127,22 +129,37 @@ def mark_as_read(service: Resource, message_id: str) -> None:
 
 
 def _extract_body(payload: dict) -> str:
-    """Extrae el texto plano del cuerpo de un correo."""
-    if payload.get("mimeType") == "text/plain" and payload.get("body", {}).get("data"):
-        return _decode_base64(payload["body"]["data"])
+    """Extrae el texto del cuerpo de un correo.
 
-    for part in payload.get("parts", []):
-        if part.get("mimeType") == "text/plain" and part.get("body", {}).get("data"):
-            return _decode_base64(part["body"]["data"])
-        if part.get("parts"):
-            result = _extract_body(part)
-            if result:
-                return result
-
-    if payload.get("body", {}).get("data"):
-        return _decode_base64(payload["body"]["data"])
-
+    Prioriza text/plain. Si no existe, usa text/html como fallback
+    y lo convierte a texto plano con BeautifulSoup.
+    """
+    plain = _find_part_by_mime(payload, "text/plain")
+    if plain:
+        return plain
+    html = _find_part_by_mime(payload, "text/html")
+    if html:
+        return _html_to_text(html)
     return ""
+
+
+def _find_part_by_mime(payload: dict, mime_type: str) -> str:
+    """Busca recursivamente la primera parte con el mime_type dado."""
+    if payload.get("mimeType") == mime_type and payload.get("body", {}).get("data"):
+        return _decode_base64(payload["body"]["data"])
+    for part in payload.get("parts", []):
+        result = _find_part_by_mime(part, mime_type)
+        if result:
+            return result
+    return ""
+
+
+def _html_to_text(html: str) -> str:
+    """Convierte HTML a texto plano, eliminando etiquetas y scripts."""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+    return soup.get_text(separator=" ")
 
 
 def _decode_base64(data: str) -> str:
