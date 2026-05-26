@@ -46,13 +46,13 @@ spendLens/
 ├── services/
 │   ├── __init__.py
 │   ├── claude_service.py           # Wrapper Claude API: ask_text, ask_with_image, ask_json, ask_json_with_image
-│   └── gmail_service.py            # OAuth 2.0 auth, list_bank_emails, fetch_email, mark_as_read
+│   └── gmail_service.py            # OAuth 2.0 auth, list_bank_emails(anio, mes), fetch_email, build_bank_query(anio, mes)
 │
 └── views/
     ├── __init__.py
     ├── upload.py                   # Tabs: entrada manual + foto de factura con preview/edición
-    ├── transactions.py             # Lista con métricas (total, count, promedio) + dataframe
-    └── gmail_import.py             # Vista "Importar desde Gmail": trae, parsea, deduplica y guarda emails
+    ├── transactions.py             # Lista con filtros (mes, año, categoría, tipo) + métricas dinámicas + dataframe
+    └── gmail_import.py             # Vista "Importar desde Gmail": selectores mes/año, trae, parsea, deduplica y guarda
 ```
 
 ### Archivos planificados pero NO creados aún
@@ -95,10 +95,12 @@ tests/                              # No existe — sin tests unitarios
 - [x] `_extract_body()`: fallback a HTML con BeautifulSoup cuando no hay text/plain
 - [x] `build_bank_query()`: removido filtro `is:unread` para no perder correos ya abiertos
 - [x] Validado contra 12 correos reales: 11 parsean correctamente, 1 retorna `None` correctamente (aviso de rechazo, no transacción)
-- [x] `importar_emails()`: orquestador que trae correos de Gmail → parsea → deduplica por `message_id` → guarda en BD
+- [x] `importar_emails(anio, mes)`: orquestador que trae correos de Gmail → parsea → deduplica por `message_id` → guarda en BD
 - [x] `db.py`: `email_ya_importado(message_id)` e `insert_email_transaction()` con `message_id` en `raw_data` JSON
-- [x] Vista `gmail_import.py`: pantalla "Importar desde Gmail" integrada en `app.py`
+- [x] Vista `gmail_import.py`: pantalla "Importar desde Gmail" con selectores de mes y año, integrada en `app.py`
 - [x] Deduplicación por `message_id` implementada y probada (re-importar da 0 nuevas, todas duplicadas)
+- [x] `build_bank_query(anio, mes)`: query por rango de mes con `after:/before:` en vez de `newer_than:` (importación de cualquier mes histórico)
+- [x] Vista `transactions.py`: filtros de mes, año, categoría y tipo con métricas que se recalculan según el filtro
 
 ### Fase 3 — Procesamiento y calidad de datos ⏳
 
@@ -192,9 +194,9 @@ Predefinidas en la tabla `categorias`, creadas por el usuario desde la UI. Suger
 ### Etiqueta Gmail
 Se usa la etiqueta `SpendLens` en Gmail para filtrar correos bancarios. El query es:
 ```
-newer_than:{max_days}d label:SpendLens
+after:YYYY/MM/01 before:YYYY/MM+1/01 label:SpendLens
 ```
-> Se removió `is:unread` del query para no perder transacciones de correos ya abiertos. La deduplicación por `message_id` ya está implementada en `db.py`.
+> `build_bank_query(anio, mes)` construye el rango con `after:/before:` (antes usaba `newer_than:`). Permite importar cualquier mes histórico. La deduplicación por `message_id` ya está implementada en `db.py`.
 
 El usuario debe crear la etiqueta manualmente en Gmail y aplicar un filtro para que los correos de `alertasynotificaciones@bancolombia.com.co` y `notificaciones@nequi.com.co` reciban esa etiqueta.
 
