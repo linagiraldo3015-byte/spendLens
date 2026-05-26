@@ -12,7 +12,7 @@ App web personal de seguimiento de gastos que ingiere datos desde tres fuentes (
 
 ```
 spendLens/
-├── app.py                          # Punto de entrada Streamlit (sidebar + routing)
+├── app.py                          # Punto de entrada Streamlit (sidebar + routing: Registrar, Transacciones, Importar Gmail)
 ├── requirements.txt                # Dependencias pinneadas
 ├── .env.example                    # Template de variables de entorno
 ├── .gitignore                      # Excluye venv/, .env, *.db, token.json, credentials.json
@@ -26,7 +26,7 @@ spendLens/
 ├── database/
 │   ├── schema.sql                  # DDL completo: transactions, categorias, transaction_sources,
 │   │                               #   transaction_links, review_queue, presupuestos
-│   ├── db.py                       # Conexión SQLite, init_db(), CRUD de transacciones y categorías
+│   ├── db.py                       # Conexión SQLite, init_db(), CRUD, email_ya_importado(), insert_email_transaction()
 │   └── migrations/
 │       └── 001_initial.sql         # Ejecuta schema.sql
 │
@@ -38,7 +38,7 @@ spendLens/
 ├── ingestion/
 │   ├── __init__.py
 │   ├── photo_parser.py             # Extracción de recibos con Claude Vision → Transaction
-│   └── email_parser.py             # Regex parser para correos de Bancolombia y Nequi
+│   └── email_parser.py             # Regex parser (5 Bancolombia + 3 Nequi), importar_emails() orquestador
 │
 ├── processing/
 │   └── __init__.py                 # Vacío — módulos pendientes (normalizer, deduplicator, etc.)
@@ -51,7 +51,8 @@ spendLens/
 └── views/
     ├── __init__.py
     ├── upload.py                   # Tabs: entrada manual + foto de factura con preview/edición
-    └── transactions.py             # Lista con métricas (total, count, promedio) + dataframe
+    ├── transactions.py             # Lista con métricas (total, count, promedio) + dataframe
+    └── gmail_import.py             # Vista "Importar desde Gmail": trae, parsea, deduplica y guarda emails
 ```
 
 ### Archivos planificados pero NO creados aún
@@ -82,7 +83,7 @@ tests/                              # No existe — sin tests unitarios
 - [x] `app.py`: navegación sidebar con dos páginas
 - [x] Creación de categorías inline en el formulario
 
-### Fase 2 — Ingesta con IA 🔄
+### Fase 2 — Ingesta con IA ✅
 
 - [x] `claude_service.py`: wrapper completo (text, image, json, json+image)
 - [x] `photo_parser.py`: extracción de recibos con Claude Vision + preview editable en UI
@@ -94,12 +95,15 @@ tests/                              # No existe — sin tests unitarios
 - [x] `_extract_body()`: fallback a HTML con BeautifulSoup cuando no hay text/plain
 - [x] `build_bank_query()`: removido filtro `is:unread` para no perder correos ya abiertos
 - [x] Validado contra 12 correos reales: 11 parsean correctamente, 1 retorna `None` correctamente (aviso de rechazo, no transacción)
-- [ ] Integración del email parser en la UI (vista para importar correos)
-- [ ] `normalizer.py`: normalización centralizada
+- [x] `importar_emails()`: orquestador que trae correos de Gmail → parsea → deduplica por `message_id` → guarda en BD
+- [x] `db.py`: `email_ya_importado(message_id)` e `insert_email_transaction()` con `message_id` en `raw_data` JSON
+- [x] Vista `gmail_import.py`: pantalla "Importar desde Gmail" integrada en `app.py`
+- [x] Deduplicación por `message_id` implementada y probada (re-importar da 0 nuevas, todas duplicadas)
+
+### Fase 3 — Procesamiento y calidad de datos ⏳
+
+- [ ] `normalizer.py`: normalización centralizada de comercios (EXITO POBLADO → Éxito)
 - [ ] `categorizer.py`: clasificación automática con Claude
-
-### Fase 3 — Calidad de datos ⏳
-
 - [ ] `deduplicator.py`: motor de deduplicación con rapidfuzz
 - [ ] Cola de revisión humana (`review_queue.py` vista)
 - [ ] `split_detector.py`: detección de gastos compartidos
@@ -190,12 +194,12 @@ Se usa la etiqueta `SpendLens` en Gmail para filtrar correos bancarios. El query
 ```
 newer_than:{max_days}d label:SpendLens
 ```
-> ⚠️ Se removió `is:unread` del query para no perder transacciones de correos ya abiertos. La deduplicación se manejará por `message_id` al conectar con la BD.
+> Se removió `is:unread` del query para no perder transacciones de correos ya abiertos. La deduplicación por `message_id` ya está implementada en `db.py`.
 
 El usuario debe crear la etiqueta manualmente en Gmail y aplicar un filtro para que los correos de `alertasynotificaciones@bancolombia.com.co` y `notificaciones@nequi.com.co` reciban esa etiqueta.
 
 ### transaction_sources
-Una transacción puede tener múltiples fuentes (`foto`, `email`, `manual`). La tabla `transaction_sources` registra cada fuente con su `raw_data` (JSON original) y `confianza` (0–1). Actualmente solo se inserta la fuente `manual` con confianza `1.0` desde `db.py`.
+Una transacción puede tener múltiples fuentes (`foto`, `email`, `manual`). La tabla `transaction_sources` registra cada fuente con su `raw_data` (JSON original) y `confianza` (0–1). Se insertan fuentes `manual` (confianza `1.0`) y `email` (confianza `0.9`, con `message_id` en `raw_data` JSON) desde `db.py`.
 
 ### Formato de montos colombianos
 `_parse_monto()` en `email_parser.py` maneja tres formatos:
@@ -229,7 +233,7 @@ SPLIT_LOOKBACK_DAYS = 7          # buscar gasto original en últimos 7 días
 
 | Item | Valor |
 |---|---|
-| Cuenta | linagiraldo3015@gmail.com |
+| Cuenta | jorgepaternina189@gmail.com |
 | Etiqueta | `SpendLens` |
 | Remitentes bancarios | `alertasynotificaciones@bancolombia.com.co`, `notificaciones@nequi.com.co`, `notificaciones@nequi.com` |
 | Scopes | `gmail.readonly` |
@@ -252,16 +256,14 @@ APP_ENV=development                    # development | production
 
 ## Próximos pasos (por prioridad)
 
-1. **Vista de importación de emails** — botón en la UI para trigger `list_bank_emails()` → `parse_email()` → `insert_transaction()` con fuente `email`
-2. **Deduplicación por `message_id`** — al quitar `is:unread`, re-importar trae correos repetidos. Guardar en BD los `message_id` ya importados y saltarlos. Se implementa al conectar el parser con la BD.
-3. **categorizer.py** — clasificación automática usando Claude para transacciones sin categoría
-4. **normalizer.py** — normalización centralizada de comercios (EXITO POBLADO → Éxito)
-5. **deduplicator.py** — motor de deduplicación con rapidfuzz usando los umbrales de `settings.py`
-6. **review_queue.py** (vista) — cola de revisión humana para duplicados y splits
-7. **split_detector.py** — detección de gastos compartidos
-8. **dashboard.py** — métricas y gráficos Plotly
-9. **Tests unitarios** — empezar por `email_parser.py` y `deduplicator.py`
-10. **Deploy** — Streamlit Cloud + README con screenshots
+1. **categorizer.py** — clasificación automática usando Claude para transacciones sin categoría
+2. **normalizer.py** — normalización centralizada de comercios (EXITO POBLADO → Éxito)
+3. **deduplicator.py** — motor de deduplicación con rapidfuzz usando los umbrales de `settings.py`
+4. **review_queue.py** (vista) — cola de revisión humana para duplicados y splits
+5. **split_detector.py** — detección de gastos compartidos
+6. **dashboard.py** — métricas y gráficos Plotly
+7. **Tests unitarios** — empezar por `email_parser.py` y `deduplicator.py`
+8. **Deploy** — Streamlit Cloud + README con screenshots
 
 ---
 
