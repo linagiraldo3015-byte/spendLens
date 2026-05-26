@@ -1,8 +1,7 @@
 import streamlit as st
 
 from database.db import init_db
-from views import upload, transactions, gmail_import
-
+from views import upload, transactions, gmail_import, review_queue
 st.set_page_config(
     page_title="SpendLens",
     page_icon="$",
@@ -22,7 +21,12 @@ st.sidebar.caption("Seguimiento inteligente de gastos personales")
 
 pagina = st.sidebar.radio(
     "Navegacion",
-    options=["Registrar gasto", "Importar desde Gmail", "Transacciones"],
+    options=[
+        "Registrar gasto",
+        "Importar desde Gmail",
+        "Transacciones",
+        "Cola de revisión",
+    ],
 )
 
 if pagina == "Registrar gasto":
@@ -31,3 +35,5 @@ elif pagina == "Importar desde Gmail":
     gmail_import.render()
 elif pagina == "Transacciones":
     transactions.render()
+elif pagina == "Cola de revisión":
+    review_queue.render()
