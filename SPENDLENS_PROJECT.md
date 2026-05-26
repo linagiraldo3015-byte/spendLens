@@ -2,7 +2,7 @@
 
 App web personal de seguimiento de gastos que ingiere datos desde tres fuentes (fotos de facturas, correos bancarios, entrada manual), extrae y categoriza con IA, detecta duplicados/splits, y presenta un dashboard analítico.
 
-**Stack:** Python 3.11+ · Streamlit · Claude API (claude-sonnet-4-5) · Gmail API (OAuth 2.0) · SQLite · Plotly · BeautifulSoup4  
+**Stack:** Python 3.11+ · Streamlit · Claude API (claude-sonnet-4-5) · Gmail API (OAuth 2.0) · SQLite · Plotly · BeautifulSoup4 · rapidfuzz  
 **Repo:** https://github.com/linagiraldo3015-byte/spendLens  
 **Objetivo:** proyecto de portafolio — demostrar diseño de solución de datos end-to-end.
 
@@ -12,7 +12,7 @@ App web personal de seguimiento de gastos que ingiere datos desde tres fuentes (
 
 ```
 spendLens/
-├── app.py                          # Punto de entrada Streamlit (sidebar + routing: Registrar, Transacciones, Importar Gmail)
+├── app.py                          # Punto de entrada Streamlit (sidebar: Registrar, Importar Gmail, Transacciones, Cola de revisión)
 ├── requirements.txt                # Dependencias pinneadas
 ├── .env.example                    # Template de variables de entorno
 ├── .gitignore                      # Excluye venv/, .env, *.db, token.json, credentials.json
@@ -21,12 +21,12 @@ spendLens/
 ├── token.json                      # Token OAuth generado al autenticar (gitignored)
 │
 ├── config/
-│   └── settings.py                 # Constantes, rutas, umbrales de dedup/split, config Gmail
+│   └── settings.py                 # Constantes, umbrales dedup/split (incl. DEDUP_COMERCIO_AUTO_THRESHOLD), config Gmail
 │
 ├── database/
 │   ├── schema.sql                  # DDL completo: transactions, categorias, transaction_sources,
 │   │                               #   transaction_links, review_queue, presupuestos
-│   ├── db.py                       # Conexión SQLite, init_db(), CRUD, email_ya_importado(), insert_email_transaction()
+│   ├── db.py                       # CRUD, email_ya_importado(), fusionar_transacciones(), agregar_a_review_queue(), resolver_review_item()
 │   └── migrations/
 │       └── 001_initial.sql         # Ejecuta schema.sql
 │
@@ -41,7 +41,8 @@ spendLens/
 │   └── email_parser.py             # Regex parser (5 Bancolombia + 3 Nequi), importar_emails() orquestador
 │
 ├── processing/
-│   └── __init__.py                 # Vacío — módulos pendientes (normalizer, deduplicator, etc.)
+│   ├── __init__.py
+│   └── deduplicator.py             # detectar_duplicados() + procesar_duplicados(): rapidfuzz, reglas de fusión
 │
 ├── services/
 │   ├── __init__.py
@@ -52,7 +53,8 @@ spendLens/
     ├── __init__.py
     ├── upload.py                   # Tabs: entrada manual + foto de factura con preview/edición
     ├── transactions.py             # Lista con filtros (mes, año, categoría, tipo) + métricas dinámicas + dataframe
-    └── gmail_import.py             # Vista "Importar desde Gmail": selectores mes/año, trae, parsea, deduplica y guarda
+    ├── gmail_import.py             # Vista "Importar desde Gmail": selectores mes/año, trae, parsea, deduplica y guarda
+    └── review_queue.py             # Cola de revisión: pares dudosos lado a lado con botones Fusionar / Son distintas
 ```
 
 ### Archivos planificados pero NO creados aún
@@ -61,10 +63,8 @@ spendLens/
 ingestion/manual_entry.py           # Validación de entrada manual (lógica inline en views/upload.py)
 processing/normalizer.py            # Normalización de montos, fechas, nombres
 processing/categorizer.py           # Clasificación automática por categoría
-processing/deduplicator.py          # Detección y fusión de duplicados (rapidfuzz)
 processing/split_detector.py        # Detección de gastos compartidos / reembolsos
 views/dashboard.py                  # Dashboard con gráficos Plotly
-views/review_queue.py               # Cola de revisión humana para duplicados/splits
 tests/                              # No existe — sin tests unitarios
 ```
 
@@ -102,14 +102,18 @@ tests/                              # No existe — sin tests unitarios
 - [x] `build_bank_query(anio, mes)`: query por rango de mes con `after:/before:` en vez de `newer_than:` (importación de cualquier mes histórico)
 - [x] Vista `transactions.py`: filtros de mes, año, categoría y tipo con métricas que se recalculan según el filtro
 
-### Fase 3 — Procesamiento y calidad de datos ⏳
+### Fase 3 — Procesamiento y calidad de datos 🔄
 
+- [x] `deduplicator.py`: `detectar_duplicados()` compara pares por monto exacto, fecha ±1 día, similitud de comercio con rapidfuzz
+- [x] `deduplicator.py`: `procesar_duplicados()` fusiona automáticos (similitud ≥90%) y encola dudosos (75-89%) a revisión
+- [x] Reglas especiales: nunca fusionar correo-correo (pago doble real); manual-manual nunca auto, solo cola de revisión
+- [x] `db.py`: `get_transactions_con_fuentes()`, `fusionar_transacciones()` (estado='fusionado' + vínculo en `transaction_links`)
+- [x] `db.py`: `agregar_a_review_queue()` (sin duplicar pares), `get_review_queue_pendientes()`, `resolver_review_item()`
+- [x] Vista `review_queue.py`: pantalla "Cola de revisión" con pares lado a lado y botones "Fusionar" / "Son distintas"
+- [x] `settings.py`: nueva constante `DEDUP_COMERCIO_AUTO_THRESHOLD = 90`
 - [ ] `normalizer.py`: normalización centralizada de comercios (EXITO POBLADO → Éxito)
 - [ ] `categorizer.py`: clasificación automática con Claude
-- [ ] `deduplicator.py`: motor de deduplicación con rapidfuzz
-- [ ] Cola de revisión humana (`review_queue.py` vista)
 - [ ] `split_detector.py`: detección de gastos compartidos
-- [ ] Vista de revisión con propuesta de vinculación
 
 ### Fase 4 — Dashboard ⏳
 
@@ -209,12 +213,13 @@ Una transacción puede tener múltiples fuentes (`foto`, `email`, `manual`). La 
 - `$53,700` → coma=miles, sin decimal → `53700`
 - `$85.000` → punto=miles, sin decimal → `85000`
 
-### Umbrales de deduplicación (configurados, no implementados)
+### Umbrales de deduplicación (configurados e implementados en `deduplicator.py`)
 ```python
-DEDUP_CONFIDENCE_AUTO = 0.90     # ≥90% → fusión automática
-DEDUP_CONFIDENCE_REVIEW = 0.60   # 60-89% → cola de revisión
-DEDUP_DATE_TOLERANCE_DAYS = 1    # ±1 día
-DEDUP_FUZZY_THRESHOLD = 75       # rapidfuzz score mínimo
+DEDUP_CONFIDENCE_AUTO = 0.90          # ≥90% → fusión automática
+DEDUP_CONFIDENCE_REVIEW = 0.60        # 60-89% → cola de revisión
+DEDUP_DATE_TOLERANCE_DAYS = 1         # ±1 día
+DEDUP_FUZZY_THRESHOLD = 75            # rapidfuzz score mínimo para considerar par
+DEDUP_COMERCIO_AUTO_THRESHOLD = 90    # similitud de comercio para fusión automática
 ```
 
 ### Detección de splits (configurada, no implementada)
@@ -260,12 +265,10 @@ APP_ENV=development                    # development | production
 
 1. **categorizer.py** — clasificación automática usando Claude para transacciones sin categoría
 2. **normalizer.py** — normalización centralizada de comercios (EXITO POBLADO → Éxito)
-3. **deduplicator.py** — motor de deduplicación con rapidfuzz usando los umbrales de `settings.py`
-4. **review_queue.py** (vista) — cola de revisión humana para duplicados y splits
-5. **split_detector.py** — detección de gastos compartidos
-6. **dashboard.py** — métricas y gráficos Plotly
-7. **Tests unitarios** — empezar por `email_parser.py` y `deduplicator.py`
-8. **Deploy** — Streamlit Cloud + README con screenshots
+3. **split_detector.py** — detección de gastos compartidos
+4. **dashboard.py** — métricas y gráficos Plotly
+5. **Tests unitarios** — empezar por `email_parser.py` y `deduplicator.py`
+6. **Deploy** — Streamlit Cloud + README con screenshots
 
 ---
 
