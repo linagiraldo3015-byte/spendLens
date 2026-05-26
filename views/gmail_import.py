@@ -1,6 +1,13 @@
+from datetime import date
+
 import streamlit as st
 
 from ingestion.email_parser import importar_emails
+
+_MESES = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+]
 
 
 def render() -> None:
@@ -14,15 +21,33 @@ def render() -> None:
 
     st.divider()
 
+    hoy = date.today()
+
+    col_mes, col_anio = st.columns(2)
+    with col_mes:
+        mes_nombre = st.selectbox(
+            "Mes",
+            options=_MESES,
+            index=hoy.month - 1,
+        )
+        mes = _MESES.index(mes_nombre) + 1
+    with col_anio:
+        anios = list(range(2024, hoy.year + 1))
+        anio = st.selectbox(
+            "Año",
+            options=anios,
+            index=anios.index(hoy.year),
+        )
+
     if st.button("Importar correos de Gmail", type="primary"):
-        with st.spinner("Conectando con Gmail y procesando correos..."):
+        with st.spinner(f"Importando correos de {mes_nombre} {anio}..."):
             try:
-                resumen = importar_emails()
+                resumen = importar_emails(anio, mes)
             except Exception as e:
                 st.error(f"Error al importar correos: {e}")
                 return
 
-        st.success("Importación completada.")
+        st.success(f"Importación de {mes_nombre} {anio} completada.")
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Correos revisados", resumen["total"])
@@ -37,6 +62,8 @@ def render() -> None:
             )
         elif resumen["duplicadas"] > 0 and resumen["importadas"] == 0:
             st.info("No hay correos nuevos: todo ya estaba importado.")
+        elif resumen["total"] == 0:
+            st.info("No se encontraron correos en ese mes.")
 
         if resumen["no_reconocidas"] > 0:
             st.caption(
@@ -44,4 +71,4 @@ def render() -> None:
                 "transacciones (pueden ser avisos o promociones)."
             )
     else:
-        st.info("Presiona el botón para buscar y importar tus correos bancarios.")
+        st.info("Elige un mes y presiona el botón para importar tus correos bancarios.")

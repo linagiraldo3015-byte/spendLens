@@ -62,20 +62,31 @@ def get_gmail_service() -> Resource:
     return build("gmail", "v1", credentials=creds)
 
 
-def build_bank_query(max_days: int = 7) -> str:
-    """Construye el query de Gmail para filtrar correos bancarios recientes."""
-    return f"newer_than:{max_days}d label:SpendLens"
+def build_bank_query(anio: int, mes: int) -> str:
+    """Construye el query de Gmail para filtrar correos bancarios de un mes.
+
+    Usa los operadores after:/before: de Gmail. `before:` es exclusivo,
+    así que se usa el primer día del mes siguiente para incluir todo
+    el último día del mes seleccionado.
+    """
+    inicio = f"{anio:04d}/{mes:02d}/01"
+    if mes == 12:
+        fin = f"{anio + 1:04d}/01/01"
+    else:
+        fin = f"{anio:04d}/{mes + 1:02d}/01"
+    return f"after:{inicio} before:{fin} label:SpendLens"
 
 
 def list_bank_emails(
+    anio: int,
+    mes: int,
     service: Optional[Resource] = None,
-    max_results: int = 20,
-    max_days: int = 7,
+    max_results: int = 200,
 ) -> list[EmailMessage]:
-    """Lista correos no leidos de remitentes bancarios."""
+    """Lista correos bancarios de un mes y año específicos."""
     if service is None:
         service = get_gmail_service()
-    query = build_bank_query(max_days)
+    query = build_bank_query(anio, mes)
 
     response = (
         service.users()

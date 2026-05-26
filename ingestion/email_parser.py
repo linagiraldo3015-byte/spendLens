@@ -257,8 +257,12 @@ def _parse_fecha_texto(raw: str) -> date:
         pass
     return date.today()
 
-def importar_emails() -> dict:
-    """Trae correos de Gmail, los parsea y guarda los nuevos en la BD.
+def importar_emails(anio: int, mes: int) -> dict:
+    """Trae correos de Gmail de un mes, los parsea y guarda los nuevos en la BD.
+
+    Args:
+        anio: año a importar (ej. 2026)
+        mes: mes a importar (1-12)
 
     Devuelve un resumen con conteos:
       - importadas: transacciones nuevas guardadas
@@ -268,7 +272,7 @@ def importar_emails() -> dict:
     from services.gmail_service import list_bank_emails
     from database.db import email_ya_importado, insert_email_transaction
 
-    emails = list_bank_emails()
+    emails = list_bank_emails(anio, mes)
     importadas = 0
     duplicadas = 0
     no_reconocidas = 0
